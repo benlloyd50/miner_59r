@@ -26,6 +26,23 @@ fn render_state(world: &World, ctx: &mut BTerm) {
             "@",
         );
     }
+
+    ctx.draw_hollow_box(
+        1,
+        (CONSOLE_TILES_Y / 2) - 1,
+        CONSOLE_TILES_X - 3,
+        (CONSOLE_TILES_Y / 2) - 3,
+        SANDY_BROWN,
+        BLACK,
+    );
+    ctx.draw_hollow_box(
+        1,
+        1,
+        CONSOLE_TILES_X - 3,
+        (CONSOLE_TILES_Y / 2) - 3,
+        SANDY_BROWN,
+        BLACK,
+    );
 }
 
 // todo: handle input should return some sort of command
@@ -57,8 +74,20 @@ fn handle_input(world: &mut World) {
     }
 }
 
+// const CONSOLE_TILES_X: u32 = 640 / 8;
+// const CONSOLE_TILES_Y: u32 = 200 / 8;
+const CONSOLE_TILES_X: u32 = 88;
+const CONSOLE_TILES_Y: u32 = 54;
+const SCREEN_DIMENSIONS_X: u32 = CONSOLE_TILES_X * 8 / 4;
+const SCREEN_DIMENSIONS_Y: u32 = CONSOLE_TILES_Y * 8 / 4;
+const FONT_PATH: &'static str = "Anikki_Square_8x8.png";
+
 fn main() -> BError {
-    let context = BTermBuilder::simple80x50()
+    let context = BTermBuilder::new()
+        .with_simple_console(CONSOLE_TILES_X, CONSOLE_TILES_Y, FONT_PATH)
+        .with_fullscreen(false)
+        .with_dimensions(SCREEN_DIMENSIONS_X, SCREEN_DIMENSIONS_Y)
+        .with_font(FONT_PATH, 8u32, 8u32)
         .with_title("miner_59r")
         .build()?;
 

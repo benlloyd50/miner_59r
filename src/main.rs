@@ -16,25 +16,28 @@ impl GameState for State {
     }
 }
 
-const GAME_WINDOW: ((u32, u32), (u32, u32)) =
-    ((2, 2), (CONSOLE_TILES_X - 3 - 1, CONSOLE_TILES_Y / 2));
-const GAME_WINDOW_CENTER: (u32, u32) = (
-    GAME_WINDOW.1.0 / 2 + GAME_WINDOW.0.0,
-    GAME_WINDOW.1.1 / 2 + GAME_WINDOW.0.1,
-);
+const GAME_WINDOW_SIZE: (u32, u32) = (85, 24);
+const GAME_WINDOW_HALF: (u32, u32) = (GAME_WINDOW_SIZE.0 / 2, GAME_WINDOW_SIZE.1 / 2);
 
 fn world_pos_to_screen(pos: &Position, cam_pos: &Position) -> Option<(u32, u32)> {
-    let x_min = cam_pos.x.saturating_sub(GAME_WINDOW_CENTER.0 as usize);
-    let y_min = cam_pos.y.saturating_sub(GAME_WINDOW_CENTER.1 as usize);
-    let x_max = cam_pos.x.saturating_add(GAME_WINDOW_CENTER.0 as usize);
-    let y_max = cam_pos.y.saturating_add(GAME_WINDOW_CENTER.1 as usize);
+    let x_min = cam_pos.x as i64 - (GAME_WINDOW_HALF.0 as i64);
+    let y_min = cam_pos.y as i64 - (GAME_WINDOW_HALF.1 as i64);
+    let x_max = cam_pos.x as i64 + (GAME_WINDOW_HALF.0 as i64) + 1;
+    let y_max = cam_pos.y as i64 + (GAME_WINDOW_HALF.1 as i64);
 
-    if pos.x < x_min || pos.y < y_min || pos.x > x_max || pos.y > y_max {
+    let pos_i64 = (pos.x as i64, pos.y as i64);
+
+    if pos_i64.0 < x_min.max(0)
+        || pos_i64.1 < y_min.max(0)
+        || pos_i64.0 > x_max
+        || pos_i64.1 > y_max
+    {
         return None;
     }
 
-    let local_x = pos.x as u32 - x_min as u32 + GAME_WINDOW_CENTER.0;
-    let local_y = pos.y as u32 - y_min as u32 + GAME_WINDOW_CENTER.1;
+    // 1 accounts for the top left offset of the game window in the console screen
+    let local_x = pos.x as u32 - x_min as u32 + 1;
+    let local_y = pos.y as u32 - y_min as u32 + 1;
 
     Some((local_x, local_y))
 }
@@ -153,8 +156,6 @@ fn handle_input(world: &mut World) {
     }
 }
 
-// const CONSOLE_TILES_X: u32 = 640 / 8;
-// const CONSOLE_TILES_Y: u32 = 200 / 8;
 const CONSOLE_TILES_X: u32 = 88;
 const CONSOLE_TILES_Y: u32 = 54;
 const SCREEN_DIMENSIONS_X: u32 = CONSOLE_TILES_X * 8 / 4;
@@ -178,11 +179,13 @@ fn main() -> BError {
 }
 
 fn init_world(state: &mut State) {
-    state.world.spawn((Player {}, Position { x: 0, y: 0 }));
-    state.world.spawn((Position { x: 3, y: 3 },));
-    state.world.spawn((Position { x: 20, y: 10 },));
-    state.world.spawn((Position { x: 20, y: 0 },));
-    state.world.spawn((Camera {}, Position { x: 0, y: 0 }));
+    state.world.spawn((Player {}, Position { x: 50, y: 50 }));
+    state.world.spawn((Camera {}, Position { x: 50, y: 50 }));
+
+    state.world.spawn((Position { x: 30, y: 30 },));
+    state.world.spawn((Position { x: 30, y: 60 },));
+    state.world.spawn((Position { x: 70, y: 30 },));
+    state.world.spawn((Position { x: 70, y: 60 },));
 }
 
 #[derive(Debug)]

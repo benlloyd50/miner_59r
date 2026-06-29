@@ -74,26 +74,19 @@ fn render_state(world: &World, ctx: &mut BTerm) {
         return;
     };
 
-    let mut player = None;
-    let mut positions = world.query::<(Entity, &Position)>().without::<&Camera>();
-    for pos in positions.iter() {
-        let Some(local_pos) = world_pos_to_screen(pos.1, cam) else {
+    let mut positions = world.query::<(&Position, &Renderable)>();
+    for (pos, renderable) in positions.iter() {
+        let Some(local_pos) = world_pos_to_screen(pos, cam) else {
             println!("no position skipping");
             continue;
         };
 
-        if let Ok(_) = world.query_one::<&Player>(pos.0).get()
-            && player.is_none()
-        {
-            player = Some(pos.1);
-        }
-
         ctx.print_color(
             local_pos.0,
             local_pos.1,
-            RGB::from_f32(1.0, 1.0, 0.0),
-            RGB::from_f32(0., 0., 0.),
-            "@",
+            renderable.fg,
+            renderable.bg,
+            renderable.glyph,
         );
     }
 
@@ -108,7 +101,7 @@ fn render_state(world: &World, ctx: &mut BTerm) {
         BLACK,
     );
 
-    print_debug_info(world, ctx, cam, player, ui_box_offset);
+    print_debug_info(world, ctx, cam, ui_box_offset);
 
     // game box
     ctx.draw_hollow_box(
@@ -124,15 +117,11 @@ fn render_state(world: &World, ctx: &mut BTerm) {
     ctx.print_centered((CONSOLE_TILES_Y / 2) - 1, "Delving");
 }
 
-fn print_debug_info(
-    world: &World,
-    ctx: &mut BTerm,
-    cam: &Position,
-    player: Option<&Position>,
-    ui_box_offset: (u32, u32),
-) {
+fn print_debug_info(world: &World, ctx: &mut BTerm, cam: &Position, ui_box_offset: (u32, u32)) {
     ctx.print(ui_box_offset.0 + 1, ui_box_offset.1 + 1, "DEBUG INFO:");
-    if let Some(player_pos) = player {
+
+    let mut player_q = world.query::<&Position>().with::<&Player>();
+    if let Some(player_pos) = player_q.iter().next() {
         ctx.print(
             ui_box_offset.0 + 1,
             ui_box_offset.1 + 2,
@@ -219,14 +208,39 @@ fn main() -> BError {
 }
 
 fn init_world(state: &mut State) {
-    state.world.spawn((Player {}, Position { x: 50, y: 50 }));
+    state.world.spawn((
+        Player {},
+        Position { x: 50, y: 50 },
+        Renderable::new('@', YELLOW, BLACK),
+        Name::new("dude"),
+    ));
     state.world.spawn((Camera {}, Position { x: 50, y: 50 }));
 
-    state.world.spawn((Position { x: 0, y: 0 },));
-    state.world.spawn((Position { x: 30, y: 30 },));
-    state.world.spawn((Position { x: 30, y: 60 },));
-    state.world.spawn((Position { x: 70, y: 30 },));
-    state.world.spawn((Position { x: 70, y: 60 },));
+    state.world.spawn((
+        Position { x: 0, y: 0 },
+        Renderable::new('^', LIGHTBLUE, BLACK),
+        Name::new("Small Ore Rock"),
+    ));
+    state.world.spawn((
+        Position { x: 30, y: 30 },
+        Renderable::new('D', RED, BLACK),
+        Name::new("Fiery Dragon"),
+    ));
+    state.world.spawn((
+        Position { x: 30, y: 60 },
+        Renderable::new('g', LIMEGREEN, BLACK),
+        Name::new("Goblin"),
+    ));
+    state.world.spawn((
+        Position { x: 70, y: 30 },
+        Renderable::new('☺', BROWN1, BLACK),
+        Name::new("Mole Person"),
+    ));
+    state.world.spawn((
+        Position { x: 70, y: 60 },
+        Renderable::new('▲', AQUA, BLACK),
+        Name::new("Small Mineral Deposit"),
+    ));
 }
 
 #[derive(Debug)]
@@ -237,6 +251,25 @@ pub struct Position {
 
 pub struct Name {
     inner: String,
+}
+
+pub struct Renderable {
+    glyph: char, // cp437 codepoint
+    fg: RGBA,
+    bg: RGBA,
+}
+
+impl Renderable {
+    pub fn new<C>(glyph: char, fg: C, bg: C) -> Self
+    where
+        C: Into<RGBA>,
+    {
+        Self {
+            glyph,
+            fg: fg.into(),
+            bg: bg.into(),
+        }
+    }
 }
 
 impl Name {

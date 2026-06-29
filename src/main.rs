@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bracket_lib::prelude::*;
 use hecs::*;
 
@@ -20,10 +22,12 @@ const GAME_WINDOW_SIZE: (u32, u32) = (85, 24);
 const GAME_WINDOW_HALF: (u32, u32) = (GAME_WINDOW_SIZE.0 / 2, GAME_WINDOW_SIZE.1 / 2);
 
 fn world_pos_to_screen(pos: &Position, cam_pos: &Position) -> Option<(u32, u32)> {
-    let x_min = cam_pos.x as i64 - (GAME_WINDOW_HALF.0 as i64);
-    let y_min = cam_pos.y as i64 - (GAME_WINDOW_HALF.1 as i64);
+    // bounds of camera, todo unwrap this with the position of the game_box we should get camera positions that are then mapped to the console position elsewhere
+    // right now this function makes assumptions about all that like where the game box lives
+    let x_min = cam_pos.x as i64 - (GAME_WINDOW_HALF.0 as i64) + 1;
+    let y_min = cam_pos.y as i64 - (GAME_WINDOW_HALF.1 as i64) + 1;
     let x_max = cam_pos.x as i64 + (GAME_WINDOW_HALF.0 as i64) + 1;
-    let y_max = cam_pos.y as i64 + (GAME_WINDOW_HALF.1 as i64);
+    let y_max = cam_pos.y as i64 + (GAME_WINDOW_HALF.1 as i64) - 1;
 
     let pos_i64 = (pos.x as i64, pos.y as i64);
 
@@ -36,8 +40,8 @@ fn world_pos_to_screen(pos: &Position, cam_pos: &Position) -> Option<(u32, u32)>
     }
 
     // 1 accounts for the top left offset of the game window in the console screen
-    let local_x = pos.x as u32 - x_min as u32 + 1;
-    let local_y = pos.y as u32 - y_min as u32 + 1;
+    let local_x = pos.x as u32 - x_min as u32 + 2;
+    let local_y = pos.y as u32 - y_min as u32 + 2;
 
     Some((local_x, local_y))
 }
@@ -94,7 +98,7 @@ fn render_state(world: &World, ctx: &mut BTerm) {
     }
 
     // ui box
-    let ui_box_offset = (1, (CONSOLE_TILES_Y / 2) - 1);
+    let ui_box_offset: (u32, u32) = (1, (CONSOLE_TILES_Y / 2) - 1);
     ctx.draw_hollow_box(
         ui_box_offset.0,
         ui_box_offset.1,
@@ -104,14 +108,7 @@ fn render_state(world: &World, ctx: &mut BTerm) {
         BLACK,
     );
 
-    ctx.print(ui_box_offset.0 + 1, ui_box_offset.1 + 1, "DEBUG INFO:");
-    if let Some(player_pos) = player {
-        ctx.print(
-            ui_box_offset.0 + 1,
-            ui_box_offset.1 + 2,
-            format!("Player Position: {player_pos:?}"),
-        )
-    }
+    print_debug_info(world, ctx, cam, player, ui_box_offset);
 
     // game box
     ctx.draw_hollow_box(
@@ -125,6 +122,49 @@ fn render_state(world: &World, ctx: &mut BTerm) {
 
     ctx.print_centered(1, "Miner 59r");
     ctx.print_centered((CONSOLE_TILES_Y / 2) - 1, "Delving");
+}
+
+fn print_debug_info(
+    world: &World,
+    ctx: &mut BTerm,
+    cam: &Position,
+    player: Option<&Position>,
+    ui_box_offset: (u32, u32),
+) {
+    ctx.print(ui_box_offset.0 + 1, ui_box_offset.1 + 1, "DEBUG INFO:");
+    if let Some(player_pos) = player {
+        ctx.print(
+            ui_box_offset.0 + 1,
+            ui_box_offset.1 + 2,
+            format!("Player Position: {player_pos:?}"),
+        )
+    }
+
+    let mut positions = world
+        .query::<(&Position, Option<&Name>)>()
+        .without::<&Camera>()
+        .without::<&Player>();
+
+    let mut idx = 0;
+    for (pos, name) in positions.iter() {
+        // only show what would be visible to the user
+        let Some(_) = world_pos_to_screen(pos, cam) else {
+            println!("no position skipping");
+            continue;
+        };
+
+        ctx.print_color(
+            ui_box_offset.0 + 1,
+            ui_box_offset.1 + 3 + idx as u32,
+            RGB::from_f32(1.0, 1.0, 0.0),
+            RGB::from_f32(0., 0., 0.),
+            format!("{name:?} @ {pos:?}"),
+        );
+        idx += 1;
+        if idx >= 7 {
+            break;
+        }
+    }
 }
 
 // todo: handle input should return some sort of command
@@ -182,6 +222,7 @@ fn init_world(state: &mut State) {
     state.world.spawn((Player {}, Position { x: 50, y: 50 }));
     state.world.spawn((Camera {}, Position { x: 50, y: 50 }));
 
+    state.world.spawn((Position { x: 0, y: 0 },));
     state.world.spawn((Position { x: 30, y: 30 },));
     state.world.spawn((Position { x: 30, y: 60 },));
     state.world.spawn((Position { x: 70, y: 30 },));
@@ -192,4 +233,22 @@ fn init_world(state: &mut State) {
 pub struct Position {
     pub x: usize,
     pub y: usize,
+}
+
+pub struct Name {
+    inner: String,
+}
+
+impl Name {
+    pub fn new(name: impl ToString) -> Self {
+        Self {
+            inner: name.to_string(),
+        }
+    }
+}
+
+impl fmt::Debug for Name {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.inner)
+    }
 }

@@ -130,24 +130,26 @@ fn print_debug_info(world: &World, ctx: &mut BTerm, cam: &Position, ui_box_offse
     }
 
     let mut positions = world
-        .query::<(&Position, Option<&Name>)>()
+        .query::<(&Position, &Renderable, Option<&Name>)>()
         .without::<&Camera>()
         .without::<&Player>();
 
     let mut idx = 0;
-    for (pos, name) in positions.iter() {
+    let default_name = &Name::default();
+    for (pos, render, name) in positions.iter() {
         // only show what would be visible to the user
         let Some(_) = world_pos_to_screen(pos, cam) else {
-            println!("no position skipping");
+            println!("no position in view of camera, skipping");
             continue;
         };
 
+        let name = name.unwrap_or(default_name);
         ctx.print_color(
             ui_box_offset.0 + 1,
             ui_box_offset.1 + 3 + idx as u32,
-            RGB::from_f32(1.0, 1.0, 0.0),
+            render.fg,
             RGB::from_f32(0., 0., 0.),
-            format!("{name:?} @ {pos:?}"),
+            format!("{name:?} {}", render.glyph),
         );
         idx += 1;
         if idx >= 7 {
@@ -241,16 +243,17 @@ fn init_world(state: &mut State) {
         Renderable::new('▲', AQUA, BLACK),
         Name::new("Small Mineral Deposit"),
     ));
+    state.world.spawn((
+        Position { x: 80, y: 60 },
+        Renderable::new(to_char(244), AQUA, BLACK),
+        Name::new("Mushroom Guy"),
+    ));
 }
 
 #[derive(Debug)]
 pub struct Position {
     pub x: usize,
     pub y: usize,
-}
-
-pub struct Name {
-    inner: String,
 }
 
 pub struct Renderable {
@@ -269,6 +272,16 @@ impl Renderable {
             fg: fg.into(),
             bg: bg.into(),
         }
+    }
+}
+
+pub struct Name {
+    inner: String,
+}
+
+impl Default for Name {
+    fn default() -> Self {
+        Self::new("No Name")
     }
 }
 

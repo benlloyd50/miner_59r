@@ -12,7 +12,10 @@ impl GameState for State {
         ctx.cls();
 
         handle_input(&mut self.world);
+
+        // if camera follow player is behind move actions then there's a "move effect" a little jarring but kind of cool?
         camera_follow_player(&mut self.world);
+        handle_move_actions(&mut self.world);
 
         render_state(&self.world, ctx);
     }
@@ -77,7 +80,6 @@ fn render_state(world: &World, ctx: &mut BTerm) {
     let mut positions = world.query::<(&Position, &Renderable)>();
     for (pos, renderable) in positions.iter() {
         let Some(local_pos) = world_pos_to_screen(pos, cam) else {
-            println!("no position skipping");
             continue;
         };
 
@@ -139,7 +141,6 @@ fn print_debug_info(world: &World, ctx: &mut BTerm, cam: &Position, ui_box_offse
     for (pos, render, name) in positions.iter() {
         // only show what would be visible to the user
         let Some(_) = world_pos_to_screen(pos, cam) else {
-            println!("no position in view of camera, skipping");
             continue;
         };
 
@@ -158,11 +159,49 @@ fn print_debug_info(world: &World, ctx: &mut BTerm, cam: &Position, ui_box_offse
     }
 }
 
-// todo: handle input should return some sort of command
+#[derive(Debug, Clone, Copy)]
+pub struct MoveAction {
+    dx: isize,
+    dy: isize,
+}
+
+fn handle_move_actions(world: &mut World) {
+    let mut remove_me = vec![];
+
+    {
+        // Scope 1: process move actions
+        let mut pos_q = world.query::<(Entity, &mut Position, &MoveAction, &Name)>();
+        for (e, pos, dt, name) in pos_q.iter() {
+            pos.x = pos.x.saturating_add_signed(dt.dx);
+            pos.y = pos.y.saturating_add_signed(dt.dy);
+            println!("moved: {pos:?}");
+            remove_me.push((e, name.clone()));
+        }
+    }
+
+    // Scope 2: remove actions from actors
+    for (e, name) in remove_me.iter() {
+        let _ = world
+            .remove_one::<MoveAction>(*e)
+            .inspect_err(|e| eprintln!("Failed to remove a MoveAction from {name:?} | err: {e}"));
+    }
+}
+
 fn handle_input(world: &mut World) {
     let input = INPUT.lock();
     if input.is_key_pressed(VirtualKeyCode::Escape) {
         std::process::exit(0);
+    }
+
+    #[allow(unused)]
+    let mut player_e = Entity::DANGLING;
+    {
+        let mut player_q = world.query::<Entity>().with::<&Player>();
+        let Some(found) = player_q.iter().next().clone() else {
+            eprintln!("No player entity cannot handle input");
+            return;
+        };
+        player_e = found;
     }
 
     let dt = if input.is_key_pressed(VirtualKeyCode::W) {
@@ -178,12 +217,10 @@ fn handle_input(world: &mut World) {
     };
 
     if dt != (0, 0) {
-        let mut pos_q = world.query::<&mut Position>().with::<&Player>();
-        for pos in pos_q.iter() {
-            pos.x = pos.x.saturating_add_signed(dt.0);
-            pos.y = pos.y.saturating_add_signed(dt.1);
-            println!("moved: {pos:?}");
-        }
+        let action = MoveAction { dx: dt.0, dy: dt.1 };
+        let _ = world
+            .insert(player_e, (action,))
+            .inspect_err(|e| eprintln!("Failed to insert MoveAction onto player | MoveAction: {action:?} Player: {player_e:?} | Error: {e}"));
     }
 }
 
@@ -216,7 +253,11 @@ fn init_world(state: &mut State) {
         Renderable::new('@', YELLOW, BLACK),
         Name::new("dude"),
     ));
-    state.world.spawn((Camera {}, Position { x: 50, y: 50 }));
+    state.world.spawn((
+        Camera {},
+        Position { x: 50, y: 50 },
+        Name::new("Main Camera"),
+    ));
 
     state.world.spawn((
         Position { x: 0, y: 0 },
@@ -275,6 +316,9 @@ impl Renderable {
     }
 }
 
+/// REQUIRED for all entities that have an expectation of being interacted with.
+/// This would include npcs, player, breakable items
+#[derive(Clone)]
 pub struct Name {
     inner: String,
 }

@@ -15,7 +15,10 @@ impl GameState for State {
 
         // if camera follow player is behind move actions then there's a "move effect" a little jarring but kind of cool?
         camera_follow_player(&mut self.world);
+
+        // move actions can trigger other actions
         handle_move_actions(&mut self.world);
+        handle_attack_actions(&mut self.world);
 
         render_state(&self.world, ctx);
     }
@@ -165,8 +168,10 @@ pub struct MoveAction {
     dy: isize,
 }
 
-#[derive(Debug)]
-pub struct RemoveAction {}
+#[derive(Debug, Clone, Copy)]
+pub struct AttackAction {
+    target: Entity,
+}
 
 // move action
 
@@ -198,6 +203,7 @@ fn handle_move_actions(world: &mut World) {
             if let Some(blocker) = blockers.first() {
                 println!("{name:?} blocked from moving to {pos:?} by {:?}", blocker.1);
                 buf.remove_one::<MoveAction>(mover);
+                buf.insert_one(mover, AttackAction { target: blocker.0 });
                 continue;
             }
 
@@ -207,6 +213,22 @@ fn handle_move_actions(world: &mut World) {
         }
     }
 
+    buf.run_on(world);
+}
+
+fn handle_attack_actions(world: &mut World) {
+    let mut buf = CommandBuffer::new();
+
+    {
+        let mut pos_q = world.query::<(Entity, &AttackAction, &Name)>();
+        for (attacker, attack, a_name) in pos_q.iter() {
+            if let Ok((t_name,)) = world.query_one::<(&Name,)>(attack.target).get() {
+                buf.despawn(attack.target);
+                println!("{a_name:?} attacked {t_name:?} and killed it instantly");
+            }
+            buf.remove_one::<AttackAction>(attacker);
+        }
+    }
     buf.run_on(world);
 }
 

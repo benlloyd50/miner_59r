@@ -165,26 +165,49 @@ pub struct MoveAction {
     dy: isize,
 }
 
+#[derive(Debug)]
+pub struct RemoveAction {}
+
+// move action
+
+// check position to see if there's an entity there
+// if no one then the move suceeds
+// can possibly mutate position now or insert component and loop later?
+// if there is then the move fails
+// both cases the moveaction must be removed
+
 fn handle_move_actions(world: &mut World) {
-    let mut remove_me = vec![];
+    let mut buf = CommandBuffer::new();
 
     {
-        // Scope 1: process move actions
-        let mut pos_q = world.query::<(Entity, &mut Position, &MoveAction, &Name)>();
-        for (e, pos, dt, name) in pos_q.iter() {
-            pos.x = pos.x.saturating_add_signed(dt.dx);
-            pos.y = pos.y.saturating_add_signed(dt.dy);
-            println!("moved: {pos:?}");
-            remove_me.push((e, name.clone()));
+        let mut pos_q = world.query::<(Entity, &Position, &MoveAction, &Name)>();
+        for (mover, pos, dt, name) in pos_q.iter() {
+            let x = pos.x.saturating_add_signed(dt.dx);
+            let y = pos.y.saturating_add_signed(dt.dy);
+            let dest_pos = Position { x, y };
+            let mut pos_q_2 = world
+                .query::<(Entity, &Position, &Name)>()
+                .without::<&Camera>();
+
+            let blockers: Vec<(Entity, Name)> = pos_q_2
+                .iter()
+                .filter(|(e, target_pos, _)| *e != mover && **target_pos == dest_pos)
+                .map(|b| (b.0, b.2.clone()))
+                .collect();
+
+            if let Some(blocker) = blockers.first() {
+                println!("{name:?} blocked from moving to {pos:?} by {:?}", blocker.1);
+                buf.remove_one::<MoveAction>(mover);
+                continue;
+            }
+
+            buf.insert_one(mover, dest_pos);
+            buf.remove_one::<MoveAction>(mover);
+            println!("{name:?} moved: {pos:?}");
         }
     }
 
-    // Scope 2: remove actions from actors
-    for (e, name) in remove_me.iter() {
-        let _ = world
-            .remove_one::<MoveAction>(*e)
-            .inspect_err(|e| eprintln!("Failed to remove a MoveAction from {name:?} | err: {e}"));
-    }
+    buf.run_on(world);
 }
 
 fn handle_input(world: &mut World) {
@@ -291,7 +314,7 @@ fn init_world(state: &mut State) {
     ));
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Position {
     pub x: usize,
     pub y: usize,

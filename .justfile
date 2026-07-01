@@ -1,5 +1,5 @@
 # Set shell for non-Windows OSs:
-set shell := ["powershell", "-c"]
+set shell := ["zsh", "-c"]
 
 # Set shell for Windows OSs:
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]

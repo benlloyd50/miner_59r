@@ -1,17 +1,55 @@
-use std::fmt;
+use std::{
+    fmt,
+    time::{Duration, Instant},
+};
 
 use bracket_lib::prelude::*;
 use hecs::*;
 
 struct State {
     pub world: World,
+    pub input_timer: Timer,
+}
+
+#[derive(Debug)]
+struct Timer {
+    ticks: Duration,
+    duration: Duration,
+    last_tick: Instant,
+}
+
+impl Timer {
+    pub fn new(duration: Duration) -> Self {
+        Self {
+            ticks: Duration::ZERO,
+            duration,
+            last_tick: Instant::now(),
+        }
+    }
+
+    pub fn tick(&mut self, now: Instant) {
+        let delta = now - self.last_tick;
+        self.ticks += delta;
+        self.last_tick = Instant::now();
+    }
+
+    // checks if the timer has elapsed the time
+    pub fn finished(&self) -> bool {
+        self.ticks >= self.duration
+    }
+
+    pub fn reset(&mut self) {
+        self.ticks = Duration::ZERO;
+        self.last_tick = Instant::now();
+    }
 }
 
 impl GameState for State {
     fn tick(&mut self, ctx: &mut BTerm) {
+        self.input_timer.tick(Instant::now());
         ctx.cls();
 
-        handle_input(&mut self.world);
+        handle_input(&mut self.world, &mut self.input_timer);
 
         // if camera follow player is behind move actions then there's a "move effect" a little jarring but kind of cool?
         camera_follow_player(&mut self.world);
@@ -232,7 +270,7 @@ fn handle_attack_actions(world: &mut World) {
     buf.run_on(world);
 }
 
-fn handle_input(world: &mut World) {
+fn handle_input(world: &mut World, input_timer: &mut Timer) {
     let input = INPUT.lock();
     if input.is_key_pressed(VirtualKeyCode::Escape) {
         std::process::exit(0);
@@ -243,7 +281,7 @@ fn handle_input(world: &mut World) {
     {
         let mut player_q = world.query::<Entity>().with::<&Player>();
         let Some(found) = player_q.iter().next().clone() else {
-            eprintln!("No player entity cannot handle input");
+            eprintln!("No player entity, cannot handle input");
             return;
         };
         player_e = found;
@@ -260,6 +298,12 @@ fn handle_input(world: &mut World) {
     } else {
         (0, 0)
     };
+
+    if !input_timer.finished() {
+        return;
+    } else {
+        input_timer.reset();
+    }
 
     if dt != (0, 0) {
         let action = MoveAction { dx: dt.0, dy: dt.1 };
@@ -285,7 +329,10 @@ fn main() -> BError {
         .build()?;
 
     let world = World::new();
-    let mut gs = State { world };
+    let mut gs = State {
+        world,
+        input_timer: Timer::new(Duration::from_millis(200)),
+    };
     init_world(&mut gs);
 
     main_loop(context, gs)

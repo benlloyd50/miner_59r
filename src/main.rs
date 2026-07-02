@@ -19,6 +19,7 @@ struct Timer {
     last_tick: Instant,
 }
 
+#[allow(unused)]
 impl Timer {
     pub fn new(duration: Duration) -> Self {
         Self {
@@ -310,7 +311,6 @@ fn tick_held_keys(input_state: &mut InputState) {
             let last_update = input_state.last_update();
             if let Some(state) = input_state.keys_held.get_mut(pressed_key) {
                 *state += now - last_update;
-                println!("update time {state:?}");
             } else {
                 input_state.keys_held.insert(*pressed_key, Duration::ZERO);
             }
@@ -346,7 +346,7 @@ fn handle_input(world: &mut World, input_state: &InputState) {
         player_e = found;
     }
 
-    const HELD_TIME: Duration = Duration::from_millis(200);
+    const HELD_TIME: Duration = Duration::from_millis(70);
 
     let dt = if input_state.just_pressed(VirtualKeyCode::W)
         || input_state.key_held_for(VirtualKeyCode::W, HELD_TIME)

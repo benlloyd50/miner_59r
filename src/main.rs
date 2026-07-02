@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt,
     time::{Duration, Instant},
 };
@@ -8,7 +9,7 @@ use hecs::*;
 
 struct State {
     pub world: World,
-    pub input_timer: Timer,
+    pub input_state: InputState,
 }
 
 #[derive(Debug)]
@@ -46,10 +47,10 @@ impl Timer {
 
 impl GameState for State {
     fn tick(&mut self, ctx: &mut BTerm) {
-        self.input_timer.tick(Instant::now());
+        tick_held_keys(&mut self.input_state);
         ctx.cls();
 
-        handle_input(&mut self.world, &mut self.input_timer);
+        handle_input(&mut self.world, &mut self.input_state);
 
         // if camera follow player is behind move actions then there's a "move effect" a little jarring but kind of cool?
         camera_follow_player(&mut self.world);
@@ -270,7 +271,65 @@ fn handle_attack_actions(world: &mut World) {
     buf.run_on(world);
 }
 
-fn handle_input(world: &mut World, input_timer: &mut Timer) {
+// goal state: player can only move so fast. currently i want 1 tap direction and continuous?
+// if you press a key it must be held for some amount of time to trigger continous movement
+
+#[derive(Default)]
+pub struct InputState {
+    pub keys_held: HashMap<VirtualKeyCode, Duration>,
+    pub last_update: Option<Instant>,
+}
+
+impl InputState {
+    pub fn last_update(&self) -> Instant {
+        self.last_update.unwrap_or(Instant::now())
+    }
+
+    pub fn just_pressed(&self, key: VirtualKeyCode) -> bool {
+        self.keys_held
+            .get(&key)
+            .is_some_and(|duration| duration.is_zero())
+    }
+
+    pub fn key_held_for(&self, key: VirtualKeyCode, time_held_for: Duration) -> bool {
+        self.keys_held
+            .get(&key)
+            .is_some_and(|duration| duration >= &time_held_for)
+    }
+}
+
+fn tick_held_keys(input_state: &mut InputState) {
+    let input = INPUT.lock();
+    let pressed_set = input.key_pressed_set();
+
+    let mut was_pressed_this_frame = vec![];
+    {
+        for pressed_key in pressed_set.iter() {
+            // now is calced in here for the micro time diff in between loop iterations which honestly may not matter :shrugs:
+            let now = Instant::now();
+            let last_update = input_state.last_update();
+            if let Some(state) = input_state.keys_held.get_mut(pressed_key) {
+                *state += now - last_update;
+                println!("update time {state:?}");
+            } else {
+                input_state.keys_held.insert(*pressed_key, Duration::ZERO);
+            }
+            was_pressed_this_frame.push(pressed_key.clone());
+        }
+    }
+
+    input_state
+        .keys_held
+        .retain(|key, _| was_pressed_this_frame.contains(&key));
+
+    input_state.last_update = Some(Instant::now());
+
+    // if !input_state.keys_held.is_empty() {
+    //     println!("held keys: {:#?}", input_state.keys_held);
+    // }
+}
+
+fn handle_input(world: &mut World, input_state: &InputState) {
     let input = INPUT.lock();
     if input.is_key_pressed(VirtualKeyCode::Escape) {
         std::process::exit(0);
@@ -287,23 +346,27 @@ fn handle_input(world: &mut World, input_timer: &mut Timer) {
         player_e = found;
     }
 
-    let dt = if input.is_key_pressed(VirtualKeyCode::W) {
+    const HELD_TIME: Duration = Duration::from_millis(200);
+
+    let dt = if input_state.just_pressed(VirtualKeyCode::W)
+        || input_state.key_held_for(VirtualKeyCode::W, HELD_TIME)
+    {
         (0, -1)
-    } else if input.is_key_pressed(VirtualKeyCode::A) {
+    } else if input_state.just_pressed(VirtualKeyCode::A)
+        || input_state.key_held_for(VirtualKeyCode::A, HELD_TIME)
+    {
         (-1, 0)
-    } else if input.is_key_pressed(VirtualKeyCode::D) {
+    } else if input_state.just_pressed(VirtualKeyCode::D)
+        || input_state.key_held_for(VirtualKeyCode::D, HELD_TIME)
+    {
         (1, 0)
-    } else if input.is_key_pressed(VirtualKeyCode::S) {
+    } else if input_state.just_pressed(VirtualKeyCode::S)
+        || input_state.key_held_for(VirtualKeyCode::S, HELD_TIME)
+    {
         (0, 1)
     } else {
         (0, 0)
     };
-
-    if !input_timer.finished() {
-        return;
-    } else {
-        input_timer.reset();
-    }
 
     if dt != (0, 0) {
         let action = MoveAction { dx: dt.0, dy: dt.1 };
@@ -331,7 +394,7 @@ fn main() -> BError {
     let world = World::new();
     let mut gs = State {
         world,
-        input_timer: Timer::new(Duration::from_millis(200)),
+        input_state: InputState::default(),
     };
     init_world(&mut gs);
 

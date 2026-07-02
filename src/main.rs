@@ -1,11 +1,14 @@
 use std::{
     collections::HashMap,
     fmt,
+    path::Path,
     time::{Duration, Instant},
 };
 
 use bracket_lib::prelude::*;
+use ftail::Ftail;
 use hecs::*;
+use log::{LevelFilter, debug, error, info};
 
 struct State {
     pub world: World,
@@ -64,7 +67,7 @@ impl GameState for State {
     }
 }
 
-const GAME_WINDOW_SIZE: (u32, u32) = (85, 24);
+const GAME_WINDOW_SIZE: (u32, u32) = (46, 33);
 const GAME_WINDOW_HALF: (u32, u32) = (GAME_WINDOW_SIZE.0 / 2, GAME_WINDOW_SIZE.1 / 2);
 
 fn world_pos_to_screen(pos: &Position, cam_pos: &Position) -> Option<(u32, u32)> {
@@ -241,7 +244,7 @@ fn handle_move_actions(world: &mut World) {
                 .collect();
 
             if let Some(blocker) = blockers.first() {
-                println!("{name:?} blocked from moving to {pos:?} by {:?}", blocker.1);
+                debug!("{name:?} blocked from moving to {pos:?} by {:?}", blocker.1);
                 buf.remove_one::<MoveAction>(mover);
                 buf.insert_one(mover, AttackAction { target: blocker.0 });
                 continue;
@@ -249,7 +252,7 @@ fn handle_move_actions(world: &mut World) {
 
             buf.insert_one(mover, dest_pos);
             buf.remove_one::<MoveAction>(mover);
-            println!("{name:?} moved: {pos:?}");
+            debug!("{name:?} moved: {pos:?}");
         }
     }
 
@@ -264,7 +267,7 @@ fn handle_attack_actions(world: &mut World) {
         for (attacker, attack, a_name) in pos_q.iter() {
             if let Ok((t_name,)) = world.query_one::<(&Name,)>(attack.target).get() {
                 buf.despawn(attack.target);
-                println!("{a_name:?} attacked {t_name:?} and killed it instantly");
+                info!("{a_name:?} attacked {t_name:?} and killed it instantly");
             }
             buf.remove_one::<AttackAction>(attacker);
         }
@@ -324,9 +327,9 @@ fn tick_held_keys(input_state: &mut InputState) {
 
     input_state.last_update = Some(Instant::now());
 
-    // if !input_state.keys_held.is_empty() {
-    //     println!("held keys: {:#?}", input_state.keys_held);
-    // }
+    if !input_state.keys_held.is_empty() {
+        debug!("held keys: {:#?}", input_state.keys_held);
+    }
 }
 
 fn handle_input(world: &mut World, input_state: &InputState) {
@@ -340,7 +343,7 @@ fn handle_input(world: &mut World, input_state: &InputState) {
     {
         let mut player_q = world.query::<Entity>().with::<&Player>();
         let Some(found) = player_q.iter().next().clone() else {
-            eprintln!("No player entity, cannot handle input");
+            error!("No player entity, cannot handle input");
             return;
         };
         player_e = found;
@@ -372,17 +375,23 @@ fn handle_input(world: &mut World, input_state: &InputState) {
         let action = MoveAction { dx: dt.0, dy: dt.1 };
         let _ = world
             .insert(player_e, (action,))
-            .inspect_err(|e| eprintln!("Failed to insert MoveAction onto player | MoveAction: {action:?} Player: {player_e:?} | Error: {e}"));
+            .inspect_err(|e| error!("Failed to insert MoveAction onto player | MoveAction: {action:?} Player: {player_e:?} | Error: {e}"));
     }
 }
 
-const CONSOLE_TILES_X: u32 = 88;
-const CONSOLE_TILES_Y: u32 = 54;
-const SCREEN_DIMENSIONS_X: u32 = CONSOLE_TILES_X * 8 / 4;
-const SCREEN_DIMENSIONS_Y: u32 = CONSOLE_TILES_Y * 8 / 4;
+const CONSOLE_TILES_X: u32 = 50;
+const CONSOLE_TILES_Y: u32 = 64;
+const SCREEN_DIMENSIONS_X: u32 = CONSOLE_TILES_X * 2;
+const SCREEN_DIMENSIONS_Y: u32 = CONSOLE_TILES_Y * 2;
 const FONT_PATH: &'static str = "Anikki_Square_8x8.png";
 
 fn main() -> BError {
+    Ftail::new()
+        .console(LevelFilter::Info)
+        .datetime_format("%H:%M:%S%.3f")
+        .single_file(Path::new("logs/development.log"), true, LevelFilter::Warn)
+        .init()?;
+
     let context = BTermBuilder::new()
         .with_simple_console(CONSOLE_TILES_X, CONSOLE_TILES_Y, FONT_PATH)
         .with_fullscreen(false)
